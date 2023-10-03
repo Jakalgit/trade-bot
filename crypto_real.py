@@ -15,7 +15,7 @@ api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
 
 streams = ["%s@kline_5m" % (TICKER.lower())]
 
-model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
+model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -64,7 +64,7 @@ async def subscribe_to_stream():
         response = json.loads(await websocket.recv())
         print(response)
 
-        client = Client(api_key, api_secret, tld='com', testnet=True)
+        client = Client(api_key, api_secret, testnet=True)
 
         rate = 30000
         time = -1
@@ -72,6 +72,7 @@ async def subscribe_to_stream():
         data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_5MINUTE, "1 day ago UTC")
         opens, highs, lows, closes, volumes = transform_data(data)
         start_length = len(data)
+        start_balance = float(client.get_asset_balance(asset='USDT')['free'])
         min_value = 32
         async for message in websocket:
             data = json.loads(message)
@@ -94,21 +95,29 @@ async def subscribe_to_stream():
                     # закрываем сделку, если она была открыта
                     if order is not None:
                         try:
-                            client.create_margin_order(
-                                symbol='BTCUSDT',
-                                side=order['side'] == 'SELL' if Client.SIDE_BUY else Client.SIDE_SELL,
-                                type=Client.ORDER_TYPE_MARKET,
-                                quantity=order['executedQty']
-                            )
+                            if order['side'] == 'SELL':
+                                order = client.create_order(
+                                    symbol='BTCUSDT',
+                                    side=Client.SIDE_BUY,
+                                    type=Client.ORDER_TYPE_MARKET,
+                                    quantity=order['executedQty']
+                                )
+                            elif order['side'] == 'BUY':
+                                order = client.create_order(
+                                    symbol='BTCUSDT',
+                                    side=Client.SIDE_SELL,
+                                    type=Client.ORDER_TYPE_MARKET,
+                                    quantity=order['executedQty']
+                                )
                             while True:
                                 order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
                                 if order_status['status'] == Client.ORDER_STATUS_FILLED:
                                     print("Закрытие выполнено.")
                                     break
                             order = None
-                            print(f"Маржинальная позиция успешно закрыта.")
+                            print(f"Позиция успешно закрыта.")
                         except Exception as e:
-                            print(f"Ошибка при закрытии маржинальной шорт-позиции: {e}")
+                            print(f"Ошибка при закрытии позиции: {e}")
                     closes_n, res_v = normalize_values(get_last_values(closes, min_value), last_close)
                     volume_n, n1 = normalize_values(get_last_values(volumes, min_value), 1)
                     rsi7_n, n1 = normalize_values(
@@ -129,7 +138,7 @@ async def subscribe_to_stream():
                     pd_res = model.predict([input_data])[0][0]
                     v1 = closes[-1]
                     v2 = last_close
-                    balance = float(client.get_asset_balance(asset='USDT')['free'])
+                    balance = float(client.get_asset_balance(asset='USDT')['free']) - start_balance
                     print(str(v2))
                     print(str(res_v) + " " + str(pd_res))
                     # print(colored("-" * 20, "yellow"))
@@ -140,7 +149,7 @@ async def subscribe_to_stream():
                     print(colored("-" * 20, "yellow"))
                     if pd_res > res_v:
                         # лонг
-                        order = client.create_margin_order(
+                        order = client.create_order(
                             symbol='BTCUSDT',
                             side=Client.SIDE_BUY,
                             quoteOrderQty='600.00000000',
@@ -149,10 +158,13 @@ async def subscribe_to_stream():
                         print(colored("LONG ->>>>>>>", "green"))
                     elif pd_res < res_v:
                         # шорт
-                        order = client.create_margin_order(
+                        ticker = client.get_symbol_ticker(symbol='BTCUSDT')
+                        btc_price = float(ticker['price'])
+                        quantity = 600.0 / btc_price
+                        order = client.create_order(
                             symbol='BTCUSDT',
                             side=Client.SIDE_SELL,
-                            quoteOrderQty='600.00000000',
+                            quantity=quantity,
                             type=Client.ORDER_TYPE_MARKET
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
