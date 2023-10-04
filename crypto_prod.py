@@ -1,3 +1,5 @@
+from time import sleep
+
 import telebot
 import asyncio
 import json
@@ -15,7 +17,7 @@ api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
 streams = ["%s@kline_15m" % (TICKER.lower())]
 
-model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
+model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -61,7 +63,7 @@ def get_margin_balance(client):
 
 
 async def subscribe_to_stream():
-    url = "wss://testnet.binance.vision/stream?streams="
+    url = "wss://stream.binance.com:9443/stream?streams="
     async with websockets.connect(url) as websocket:
         subscribe_request = {
             "method": "SUBSCRIBE",
@@ -108,14 +110,16 @@ async def subscribe_to_stream():
                                 order = client.create_margin_order(
                                     symbol=TICKER,
                                     side=Client.SIDE_BUY,
-                                    type=Client.ORDER_TYPE_MARKET,
+                                    type=Client.ORDER_TYPE_LIMIT,
+                                    price=last_close,
                                     quantity=order['executedQty']
                                 )
                             elif order['side'] == 'BUY':
                                 order = client.create_margin_order(
                                     symbol=TICKER,
                                     side=Client.SIDE_SELL,
-                                    type=Client.ORDER_TYPE_MARKET,
+                                    type=Client.ORDER_TYPE_LIMIT,
+                                    price=last_close,
                                     quantity=order['executedQty']
                                 )
                             while True:
@@ -152,14 +156,15 @@ async def subscribe_to_stream():
                     print(colored("-" * 20, "yellow"))
                     ticker = client.get_symbol_ticker(symbol=TICKER)
                     btc_price = float(ticker['price'])
-                    quantity = rate / btc_price
+                    quantity = round(rate / btc_price, 2)
                     if pd_res > res_v:
                         # лонг
                         order = client.create_margin_order(
                             symbol=TICKER,
                             side=Client.SIDE_BUY,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_MARKET
+                            type=Client.ORDER_TYPE_LIMIT,
+                            price=last_close,
                         )
                         print(colored("LONG ->>>>>>>", "green"))
                     elif pd_res < res_v:
@@ -168,21 +173,28 @@ async def subscribe_to_stream():
                             symbol=TICKER,
                             side=Client.SIDE_SELL,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_MARKET
+                            type=Client.ORDER_TYPE_LIMIT,
+                            price=last_close,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
+                    timer = 0
                     while True:
                         order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
-                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
-                            print("Ордер выполнен.")
+                        timer += 1
+                        sleep(0.5)
+                        if timer >= 20:
+                            print("Открытие по маркету")
                             break
+                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
+                            print("Ордер выполнен")
+                            break
+                    if timer >= 20:
+                        ...
                 else:
                     print("Loading values: " + colored(str(len(closes) - start_length + 1), "yellow"))
                 time = next_time
+                print("#-#" * 20)
 
 
 print("Starting bot...")
-try:
-    asyncio.run(subscribe_to_stream())
-except Exception as e:
-    ...
+asyncio.run(subscribe_to_stream())

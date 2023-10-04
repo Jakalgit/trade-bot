@@ -15,7 +15,7 @@ api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
 
 streams = ["%s@kline_5m" % (TICKER.lower())]
 
-model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
+model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -52,7 +52,7 @@ def get_last_values(array, count):
 
 
 async def subscribe_to_stream():
-    url = "wss://testnet.binance.vision/stream?streams="
+    url = "wss://stream.binance.com:9443/stream?streams="
     async with websockets.connect(url) as websocket:
         subscribe_request = {
             "method": "SUBSCRIBE",
@@ -192,6 +192,7 @@ async def subscribe_to_stream():
                 else:
                     print("Loading values: " + colored(str(len(closes) - start_length + 1), "yellow"))
                 time = next_time
+                print("#-#" * 20)
 
 
 print("Starting tests...")
