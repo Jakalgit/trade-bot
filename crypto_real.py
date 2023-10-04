@@ -51,6 +51,14 @@ def get_last_values(array, count):
     return result
 
 
+def loading_fill(order, client, message):
+    while True:
+        order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+        if order_status['status'] == Client.ORDER_STATUS_FILLED:
+            print(message)
+            break
+
+
 async def subscribe_to_stream():
     url = "wss://stream.binance.com:9443/stream?streams="
     async with websockets.connect(url) as websocket:
@@ -91,7 +99,7 @@ async def subscribe_to_stream():
                 highs.append(last_high)
                 lows.append(last_low)
                 volumes.append(last_volume)
-                if len(closes) >= start_length:
+                if len(closes) >= min_value:
                     # закрываем сделку, если она была открыта
                     if order is not None:
                         try:
@@ -99,23 +107,17 @@ async def subscribe_to_stream():
                                 order = client.create_order(
                                     symbol='BTCUSDT',
                                     side=Client.SIDE_BUY,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    price=last_close,
+                                    type=Client.ORDER_TYPE_MARKET,
                                     quantity=order['executedQty']
                                 )
                             elif order['side'] == 'BUY':
                                 order = client.create_order(
                                     symbol='BTCUSDT',
                                     side=Client.SIDE_SELL,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    price=last_close,
+                                    type=Client.ORDER_TYPE_MARKET,
                                     quantity=order['executedQty']
                                 )
-                            while True:
-                                order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
-                                if order_status['status'] == Client.ORDER_STATUS_FILLED:
-                                    print("Закрытие выполнено.")
-                                    break
+                            loading_fill(order, client, "Закрытие выполнено.")
                             order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
                             opening_price = float(order_trades[0]['price'])
                             print(f"Цена закрытия ордера: {opening_price} USDT")
@@ -161,8 +163,7 @@ async def subscribe_to_stream():
                             symbol='BTCUSDT',
                             side=Client.SIDE_BUY,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_LIMIT,
-                            price=last_close,
+                            type=Client.ORDER_TYPE_MARKET,
                         )
                         print(colored("LONG ->>>>>>>", "green"))
                     elif pd_res < res_v:
@@ -171,15 +172,10 @@ async def subscribe_to_stream():
                             symbol='BTCUSDT',
                             side=Client.SIDE_SELL,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_LIMIT,
-                            price=last_close,
+                            type=Client.ORDER_TYPE_MARKET,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
-                    while True:
-                        order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
-                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
-                            print("Ордер выполнен.")
-                            break
+                    loading_fill(order, client, "Ордер выполнен.")
                     order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
                     opening_price = float(order_trades[0]['price'])
                     print(f"Цена открытия ордера: {opening_price} USDT")
@@ -190,7 +186,7 @@ async def subscribe_to_stream():
                     #     parse_mode='html'
                     # )
                 else:
-                    print("Loading values: " + colored(str(len(closes) - start_length + 1), "yellow"))
+                    print("Loading values: " + colored(str(len(closes)), "yellow"))
                 time = next_time
                 print("#-#" * 20)
 
