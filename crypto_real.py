@@ -15,7 +15,7 @@ TICKER = 'BTCUSDT'
 api_key = 'smXYfifKg6qxkDEDAFo4SHilcYfJlBU5Ubth2AoMy5M0qguQvUavzv7GvYxi8Wdw'
 api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
 
-streams = ["%s@kline_5m" % (TICKER.lower())]
+streams = ["%s@kline_15m" % (TICKER.lower())]
 
 model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
@@ -56,6 +56,7 @@ def get_last_values(array, count):
 def loading_fill(order, client, message):
     timer = 0
     delay = 0.1
+    origQty = order['origQty']
     while True:
         order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
         if order_status['status'] == Client.ORDER_STATUS_FILLED:
@@ -63,7 +64,7 @@ def loading_fill(order, client, message):
             break
         sleep(delay)
         timer += 1
-        if timer >= 10 / delay:
+        if timer >= 240 / delay:
             order_info = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
             if order_info['status'] != 'FILLED':
                 client.cancel_order(symbol='BTCUSDT', orderId=order['orderId'])
@@ -82,9 +83,8 @@ def loading_fill(order, client, message):
                             print(message)
                             break
             break
-    order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
-    res_price = float(order_trades[0]['price'])
-    return res_price
+    order['origQty'] = origQty
+    return order
 
 
 
@@ -106,7 +106,7 @@ async def subscribe_to_stream():
         rate = 30000
         time = -1
         order = None
-        data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_5MINUTE, "1 day ago UTC")
+        data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_15MINUTE, "1 day ago UTC")
         opens, highs, lows, closes, volumes = transform_data(data)
         start_length = len(data)
         start_balance = float(client.get_asset_balance(asset='USDT')['free'])
@@ -132,6 +132,7 @@ async def subscribe_to_stream():
                     # закрываем сделку, если она была открыта
                     if order is not None:
                         try:
+                            print("OrigQty: " + str(order['origQty']))
                             if order['side'] == 'SELL':
                                 order = client.create_order(
                                     symbol='BTCUSDT',
@@ -139,7 +140,7 @@ async def subscribe_to_stream():
                                     type=Client.ORDER_TYPE_LIMIT,
                                     timeInForce=Client.TIME_IN_FORCE_GTC,
                                     price=last_close,
-                                    quantity=order['executedQty']
+                                    quantity=order['origQty']
                                 )
                             elif order['side'] == 'BUY':
                                 order = client.create_order(
@@ -148,9 +149,11 @@ async def subscribe_to_stream():
                                     type=Client.ORDER_TYPE_LIMIT,
                                     timeInForce=Client.TIME_IN_FORCE_GTC,
                                     price=last_close,
-                                    quantity=order['executedQty']
+                                    quantity=order['origQty']
                                 )
-                            closing_price = loading_fill(order, client, "Закрытие выполнено.")
+                            order = loading_fill(order, client, "Закрытие выполнено.")
+                            order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
+                            closing_price = float(order_trades[0]['price'])
                             print(f"Цена закрытия ордера: {closing_price} USDT")
                             order = None
                             print(f"Позиция успешно закрыта.")
@@ -174,14 +177,9 @@ async def subscribe_to_stream():
                     for i in range(0, min_value):
                         input_data.append([closes_n[i], volume_n[i], rsi7_n[i], rsi14_n[i], rsi21_n[i]])
                     pd_res = model.predict([input_data])[0][0]
-                    v1 = closes[-1]
-                    v2 = last_close
                     balance = float(client.get_asset_balance(asset='USDT')['free']) - start_balance
-                    print(str(v2))
+                    print(str(last_close))
                     print(str(res_v) + " " + str(pd_res))
-                    # print(colored("-" * 20, "yellow"))
-                    # print(
-                    #     "[] Last close value: " + str(v1) + " $. [] Current close value: " + str(v2) + " $. []")
                     print("Balance:")
                     print(colored(str(balance) + " $.", "green" if balance >= 0 else "red"))
                     print(colored("-" * 20, "yellow"))
@@ -210,7 +208,9 @@ async def subscribe_to_stream():
                             price=last_close,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
-                    opening_price = loading_fill(order, client, "Ордер выполнен.")
+                    order = loading_fill(order, client, "Ордер выполнен.")
+                    order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
+                    opening_price = float(order_trades[0]['price'])
                     print(f"Цена открытия ордера: {opening_price} USDT")
                     # mess = "<b>%s $.</b>" % str(balance)
                     # bot.send_message(
