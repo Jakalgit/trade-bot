@@ -1,3 +1,5 @@
+from time import sleep
+
 import telebot
 import asyncio
 import json
@@ -52,11 +54,38 @@ def get_last_values(array, count):
 
 
 def loading_fill(order, client, message):
+    timer = 0
+    delay = 0.1
     while True:
         order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
         if order_status['status'] == Client.ORDER_STATUS_FILLED:
             print(message)
             break
+        sleep(delay)
+        timer += 1
+        if timer >= 10 / delay:
+            order_info = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+            if order_info['status'] != 'FILLED':
+                client.cancel_order(symbol='BTCUSDT', orderId=order['orderId'])
+                remaining_quantity = float(order_info['origQty']) - float(order_info['executedQty'])
+                if remaining_quantity > 0:
+                    print("Выполение по маркету.")
+                    order = client.create_order(
+                        symbol='BTCUSDT',
+                        side=order_info['side'],
+                        type=Client.ORDER_TYPE_MARKET,
+                        quantity=remaining_quantity
+                    )
+                    while True:
+                        order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
+                            print(message)
+                            break
+            break
+    order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
+    res_price = float(order_trades[0]['price'])
+    return res_price
+
 
 
 async def subscribe_to_stream():
@@ -107,20 +136,22 @@ async def subscribe_to_stream():
                                 order = client.create_order(
                                     symbol='BTCUSDT',
                                     side=Client.SIDE_BUY,
-                                    type=Client.ORDER_TYPE_MARKET,
+                                    type=Client.ORDER_TYPE_LIMIT,
+                                    timeInForce=Client.TIME_IN_FORCE_GTC,
+                                    price=last_close,
                                     quantity=order['executedQty']
                                 )
                             elif order['side'] == 'BUY':
                                 order = client.create_order(
                                     symbol='BTCUSDT',
                                     side=Client.SIDE_SELL,
-                                    type=Client.ORDER_TYPE_MARKET,
+                                    type=Client.ORDER_TYPE_LIMIT,
+                                    timeInForce=Client.TIME_IN_FORCE_GTC,
+                                    price=last_close,
                                     quantity=order['executedQty']
                                 )
-                            loading_fill(order, client, "Закрытие выполнено.")
-                            order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
-                            opening_price = float(order_trades[0]['price'])
-                            print(f"Цена закрытия ордера: {opening_price} USDT")
+                            closing_price = loading_fill(order, client, "Закрытие выполнено.")
+                            print(f"Цена закрытия ордера: {closing_price} USDT")
                             order = None
                             print(f"Позиция успешно закрыта.")
                         except Exception as e:
@@ -163,7 +194,9 @@ async def subscribe_to_stream():
                             symbol='BTCUSDT',
                             side=Client.SIDE_BUY,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_MARKET,
+                            type=Client.ORDER_TYPE_LIMIT,
+                            timeInForce=Client.TIME_IN_FORCE_GTC,
+                            price=last_close,
                         )
                         print(colored("LONG ->>>>>>>", "green"))
                     elif pd_res < res_v:
@@ -172,12 +205,12 @@ async def subscribe_to_stream():
                             symbol='BTCUSDT',
                             side=Client.SIDE_SELL,
                             quantity=quantity,
-                            type=Client.ORDER_TYPE_MARKET,
+                            type=Client.ORDER_TYPE_LIMIT,
+                            timeInForce=Client.TIME_IN_FORCE_GTC,
+                            price=last_close,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
-                    loading_fill(order, client, "Ордер выполнен.")
-                    order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
-                    opening_price = float(order_trades[0]['price'])
+                    opening_price = loading_fill(order, client, "Ордер выполнен.")
                     print(f"Цена открытия ордера: {opening_price} USDT")
                     # mess = "<b>%s $.</b>" % str(balance)
                     # bot.send_message(
