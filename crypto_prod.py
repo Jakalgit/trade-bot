@@ -62,6 +62,41 @@ def get_margin_balance(client):
             return tusd_balance
 
 
+def loading_fill(order, client, message):
+    timer = 0
+    delay = 0.1
+    time = 240 # секунды
+    origQty = order['origQty']
+    while True:
+        order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
+        if order_status['status'] == Client.ORDER_STATUS_FILLED:
+            print(message)
+            break
+        sleep(delay)
+        timer += 1
+        if timer >= time / delay:
+            order_info = client.get_order(symbol=TICKER, orderId=order['orderId'])
+            if order_info['status'] != 'FILLED':
+                client.cancel_order(symbol=TICKER, orderId=order['orderId'])
+                remaining_quantity = float(order_info['origQty']) - float(order_info['executedQty'])
+                if remaining_quantity > 0:
+                    print("Выполение по маркету.")
+                    order = client.create_margin_order(
+                        symbol=TICKER,
+                        side=order_info['side'],
+                        type=Client.ORDER_TYPE_MARKET,
+                        quantity=remaining_quantity
+                    )
+                    while True:
+                        order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
+                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
+                            print(message)
+                            break
+            break
+    order['origQty'] = origQty
+    return order
+
+
 async def subscribe_to_stream():
     url = "wss://stream.binance.com:9443/stream?streams="
     async with websockets.connect(url) as websocket:
@@ -82,7 +117,6 @@ async def subscribe_to_stream():
         order = None
         min_value = 32
         data = client.get_historical_klines(TICKER, Client.KLINE_INTERVAL_15MINUTE, "1 day ago UTC")
-        start_length = len(data)
         start_balance = get_margin_balance(client)
         opens, highs, lows, closes, volumes = transform_data(data)
         async for message in websocket:
@@ -102,34 +136,36 @@ async def subscribe_to_stream():
                 highs.append(last_high)
                 lows.append(last_low)
                 volumes.append(last_volume)
-                if len(closes) >= start_length:
+                if len(closes) >= min_value:
                     # закрываем сделку, если она была открыта
                     if order is not None:
-                        try:
-                            if order['side'] == 'SELL':
-                                order = client.create_margin_order(
-                                    symbol=TICKER,
-                                    side=Client.SIDE_BUY,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    price=last_close,
-                                    quantity=order['executedQty']
-                                )
-                            elif order['side'] == 'BUY':
-                                order = client.create_margin_order(
-                                    symbol=TICKER,
-                                    side=Client.SIDE_SELL,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    price=last_close,
-                                    quantity=order['executedQty']
-                                )
-                            while True:
-                                order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
-                                if order_status['status'] == Client.ORDER_STATUS_FILLED:
-                                    print("Закрытие выполнено.")
-                                    break
-                            order = None
-                        except Exception as e:
-                            print(f"Ошибка при закрытии позиции: {e}")
+                        if order['side'] == 'SELL':
+                            order = client.create_margin_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_BUY,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                price=last_close,
+                                quantity=order['executedQty']
+                            )
+                        elif order['side'] == 'BUY':
+                            order = client.create_margin_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_SELL,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                price=last_close,
+                                quantity=order['executedQty']
+                            )
+                        while True:
+                            order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
+                            if order_status['status'] == Client.ORDER_STATUS_FILLED:
+                                print("Закрытие выполнено.")
+                                break
+                        order = loading_fill(order, client, "Закрытие выполнено.")
+                        order_trades = client.get_my_trades(symbol=TICKER, orderId=order['orderId'])
+                        closing_price = float(order_trades[0]['price'])
+                        print(f"Цена закрытия ордера: {closing_price} TUSD")
+                        order = None
+                        print(f"Позиция успешно закрыта.")
                     closes_n, res_v = normalize_values(get_last_values(closes, min_value), last_close)
                     volume_n, n1 = normalize_values(get_last_values(volumes, min_value), 1)
                     rsi7_n, n1 = normalize_values(
@@ -156,8 +192,8 @@ async def subscribe_to_stream():
                     print(colored("-" * 20, "yellow"))
                     ticker = client.get_symbol_ticker(symbol=TICKER)
                     btc_price = float(ticker['price'])
-                    quantity = round(rate / btc_price, 2)
-                    if pd_res > res_v:
+                    quantity = round(rate / btc_price, 6)
+                    if pd_res < res_v:
                         # лонг
                         order = client.create_margin_order(
                             symbol=TICKER,
@@ -167,7 +203,7 @@ async def subscribe_to_stream():
                             price=last_close,
                         )
                         print(colored("LONG ->>>>>>>", "green"))
-                    elif pd_res < res_v:
+                    elif pd_res > res_v:
                         # шорт
                         order = client.create_order(
                             symbol=TICKER,
@@ -177,23 +213,21 @@ async def subscribe_to_stream():
                             price=last_close,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
-                    timer = 0
-                    while True:
-                        order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
-                        timer += 1
-                        sleep(0.5)
-                        if timer >= 20:
-                            print("Открытие по маркету")
-                            break
-                        if order_status['status'] == Client.ORDER_STATUS_FILLED:
-                            print("Ордер выполнен")
-                            break
-                    if timer >= 20:
-                        ...
+                    order = loading_fill(order, client, "Ордер выполнен.")
+                    order_trades = client.get_my_trades(symbol=TICKER, orderId=order['orderId'])
+                    opening_price = float(order_trades[0]['price'])
+                    print(f"Цена открытия ордера: {opening_price} TUSD")
+                    mess = "<b>%s TUSD.</b>" % str(balance)
+                    bot.send_message(
+                        588522164,
+                        mess,
+                        parse_mode='html'
+                    )
                 else:
-                    print("Loading values: " + colored(str(len(closes) - start_length + 1), "yellow"))
+                    print("Loading values: " + colored(str(len(closes)), "yellow"))
                 time = next_time
-                print("#-#" * 20)
+                print("__" * 20)
+                print('\n')
 
 
 print("Starting bot...")

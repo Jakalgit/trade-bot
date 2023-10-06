@@ -15,7 +15,7 @@ TICKER = 'BTCUSDT'
 api_key = 'smXYfifKg6qxkDEDAFo4SHilcYfJlBU5Ubth2AoMy5M0qguQvUavzv7GvYxi8Wdw'
 api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
 
-streams = ["%s@kline_15m" % (TICKER.lower())]
+streams = ["%s@kline_5m" % (TICKER.lower())]
 
 model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
@@ -34,16 +34,16 @@ def normalize_values(array, res_v):
 def transform_data(array):
     close = []
     vol = []
-    open = []
+    opn = []
     high = []
     low = []
     for i in range(0, len(array)):
-        open.append(float(array[i][1]))
+        opn.append(float(array[i][1]))
         high.append(float(array[i][2]))
         low.append(float(array[i][3]))
         close.append(float(array[i][4]))
         vol.append(float(array[i][5]))
-    return open, high, low, close, vol
+    return opn, high, low, close, vol
 
 
 def get_last_values(array, count):
@@ -64,7 +64,7 @@ def loading_fill(order, client, message):
             break
         sleep(delay)
         timer += 1
-        if timer >= 240 / delay:
+        if timer >= 180 / delay:
             order_info = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
             if order_info['status'] != 'FILLED':
                 client.cancel_order(symbol='BTCUSDT', orderId=order['orderId'])
@@ -106,7 +106,7 @@ async def subscribe_to_stream():
         rate = 30000
         time = -1
         order = None
-        data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_15MINUTE, "1 day ago UTC")
+        data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_5MINUTE, "1 day ago UTC")
         opens, highs, lows, closes, volumes = transform_data(data)
         start_length = len(data)
         start_balance = float(client.get_asset_balance(asset='USDT')['free'])
@@ -221,7 +221,7 @@ async def subscribe_to_stream():
                 else:
                     print("Loading values: " + colored(str(len(closes)), "yellow"))
                 time = next_time
-                print("#-#" * 20)
+                print("__" * 20)
 
 
 print("Starting tests...")
