@@ -4,20 +4,20 @@ import json
 from binance import Client
 from termcolor import colored
 import websockets
-from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
 from ta.momentum import RSIIndicator, StochasticOscillator
 import numpy as np
 import pandas as pd
 
 TOKEN_BOT = "5669115775:AAGNYvbBer4Sc9g15l4Q-eE8aLUm_TKLrjQ"
-TICKER = 'BTCTUSD'
+TICKER = 'BTCFDUSD'
+TICKER_P = 'BTCTUSD'
 api_key = 'tqbGB3Te2GS7dc8IcJMXWoSPBQxjwW3PbzwRocGSN9Ugt0y8mQ9fxy9GzOEL26hw'
 api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
-streams = ["%s@kline_15m" % (TICKER.lower())]
+streams = ["%s@kline_15m" % (TICKER_P.lower())]
 
-model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
+model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -71,7 +71,7 @@ async def subscribe_to_stream():
         rate = 30000
         balance = 0
         time = -1
-        data = client.get_historical_klines(TICKER, Client.KLINE_INTERVAL_15MINUTE, "3 day ago UTC")
+        data = client.get_historical_klines(TICKER_P, Client.KLINE_INTERVAL_15MINUTE, "1 day ago UTC")
         opens, highs, lows, closes, volumes = transform_data(data)
         start_length = len(data)
         min_value = 32
@@ -80,7 +80,6 @@ async def subscribe_to_stream():
         last_high = -1
         last_open = -1
         last_volume = -1
-        scaler = MinMaxScaler()
         async for message in websocket:
             data = json.loads(message)
             next_time = data.get('data', {}).get('k', {}).get('t')
@@ -105,8 +104,13 @@ async def subscribe_to_stream():
                         for i in range(0, min_value):
                             input_data.append([closes_n[i], volume_n[i], rsi7_n[i], rsi14_n[i], rsi21_n[i]])
                         pd_res = model.predict([input_data])[0][0]
-                        v1 = closes[-1]
-                        v2 = last_close
+                        candles = client.get_historical_klines(
+                            symbol=TICKER,
+                            interval=Client.KLINE_INTERVAL_15MINUTE,
+                            limit=3
+                        )
+                        v1 = float(candles[-3][4])
+                        v2 = float(candles[-2][4])
                         k = abs(1 - v2 / v1)
                         if (pd_res < res_v and v2 >= v1) or (pd_res >= res_v and v2 <= v1):
                             balance += rate * k

@@ -55,7 +55,7 @@ def get_last_values(array, count):
 
 def loading_fill(order, client, message):
     timer = 0
-    delay = 0.1
+    delay = 0.5
     origQty = order['origQty']
     while True:
         order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
