@@ -12,10 +12,11 @@ import pandas as pd
 
 TOKEN_BOT = "5669115775:AAGNYvbBer4Sc9g15l4Q-eE8aLUm_TKLrjQ"
 TICKER = 'BTCUSDT'
+TICKER_P = 'BTCTUSD'
 api_key = 'smXYfifKg6qxkDEDAFo4SHilcYfJlBU5Ubth2AoMy5M0qguQvUavzv7GvYxi8Wdw'
 api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
 
-streams = ["%s@kline_5m" % (TICKER.lower())]
+streams = ["%s@kline_15m" % (TICKER_P.lower())]
 
 model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
@@ -55,37 +56,36 @@ def get_last_values(array, count):
 
 def loading_fill(order, client, message):
     timer = 0
-    delay = 0.5
+    delay = 0.9
     origQty = order['origQty']
     while True:
-        order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+        order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
         if order_status['status'] == Client.ORDER_STATUS_FILLED:
             print(message)
             break
         sleep(delay)
         timer += 1
-        if timer >= 180 / delay:
-            order_info = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+        if timer >= 120:
+            order_info = client.get_order(symbol=TICKER, orderId=order['orderId'])
             if order_info['status'] != 'FILLED':
-                client.cancel_order(symbol='BTCUSDT', orderId=order['orderId'])
-                remaining_quantity = float(order_info['origQty']) - float(order_info['executedQty'])
+                client.cancel_order(symbol=TICKER, orderId=order['orderId'])
+                remaining_quantity = round(float(order_info['origQty']) - float(order_info['executedQty']), 4)
                 if remaining_quantity > 0:
                     print("Выполение по маркету.")
                     order = client.create_order(
-                        symbol='BTCUSDT',
+                        symbol=TICKER,
                         side=order_info['side'],
                         type=Client.ORDER_TYPE_MARKET,
                         quantity=remaining_quantity
                     )
                     while True:
-                        order_status = client.get_order(symbol='BTCUSDT', orderId=order['orderId'])
+                        order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
                         if order_status['status'] == Client.ORDER_STATUS_FILLED:
                             print(message)
                             break
             break
     order['origQty'] = origQty
     return order
-
 
 
 async def subscribe_to_stream():
@@ -104,11 +104,13 @@ async def subscribe_to_stream():
         client = Client(api_key, api_secret, testnet=True)
 
         rate = 30000
+        cl_area = 1.5
         time = -1
         order = None
-        data = client.get_historical_klines("BTCUSDT", Client.KLINE_INTERVAL_5MINUTE, "1 day ago UTC")
+        last_od = None
+        last_balance = None
+        data = client.get_historical_klines(TICKER_P, Client.KLINE_INTERVAL_15MINUTE, "1 day ago UTC")
         opens, highs, lows, closes, volumes = transform_data(data)
-        start_length = len(data)
         start_balance = float(client.get_asset_balance(asset='USDT')['free'])
         min_value = 32
         async for message in websocket:
@@ -128,38 +130,14 @@ async def subscribe_to_stream():
                 highs.append(last_high)
                 lows.append(last_low)
                 volumes.append(last_volume)
+                candles = client.get_historical_klines(
+                    symbol=TICKER,
+                    interval=Client.KLINE_INTERVAL_15MINUTE,
+                    limit=1
+                )
+                last_usdt = float(candles[-1][4])
                 if len(closes) >= min_value:
-                    # закрываем сделку, если она была открыта
-                    if order is not None:
-                        try:
-                            print("OrigQty: " + str(order['origQty']))
-                            if order['side'] == 'SELL':
-                                order = client.create_order(
-                                    symbol='BTCUSDT',
-                                    side=Client.SIDE_BUY,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    timeInForce=Client.TIME_IN_FORCE_GTC,
-                                    price=last_close,
-                                    quantity=order['origQty']
-                                )
-                            elif order['side'] == 'BUY':
-                                order = client.create_order(
-                                    symbol='BTCUSDT',
-                                    side=Client.SIDE_SELL,
-                                    type=Client.ORDER_TYPE_LIMIT,
-                                    timeInForce=Client.TIME_IN_FORCE_GTC,
-                                    price=last_close,
-                                    quantity=order['origQty']
-                                )
-                            order = loading_fill(order, client, "Закрытие выполнено.")
-                            order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
-                            closing_price = float(order_trades[0]['price'])
-                            print(f"Цена закрытия ордера: {closing_price} USDT")
-                            order = None
-                            print(f"Позиция успешно закрыта.")
-                        except Exception as e:
-                            print(f"Ошибка при закрытии позиции: {e}")
-                    closes_n, res_v = normalize_values(get_last_values(closes, min_value), last_close)
+                    closes_n, n1 = normalize_values(get_last_values(closes, min_value), last_close)
                     volume_n, n1 = normalize_values(get_last_values(volumes, min_value), 1)
                     rsi7_n, n1 = normalize_values(
                         get_last_values(RSIIndicator(pd.Series(closes), 7).rsi().tolist(), min_value),
@@ -177,41 +155,83 @@ async def subscribe_to_stream():
                     for i in range(0, min_value):
                         input_data.append([closes_n[i], volume_n[i], rsi7_n[i], rsi14_n[i], rsi21_n[i]])
                     pd_res = model.predict([input_data])[0][0]
-                    balance = float(client.get_asset_balance(asset='USDT')['free']) - start_balance
-                    print(str(last_close))
+                    current_od = None
+                    res_v = closes_n[-1]
+                    if pd_res < res_v:
+                        current_od = 'Long'
+                    elif pd_res > res_v:
+                        current_od = 'Short'
+                    # закрываем сделку, если она была открыта
+                    if order is not None and last_od != current_od:
+                        if order['side'] == 'SELL':
+                            order = client.create_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_BUY,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
+                                price=last_usdt + cl_area,
+                                quantity=order['origQty']
+                            )
+                        elif order['side'] == 'BUY':
+                            order = client.create_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_SELL,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
+                                price=last_usdt - cl_area,
+                                quantity=order['origQty']
+                            )
+                        last_balance = None
+                        order = loading_fill(order, client, "Закрытие выполнено.")
+                        order_trades = client.get_my_trades(symbol=TICKER, orderId=order['orderId'])
+                        closing_price = float(order_trades[0]['price'])
+                        print(f"Цена закрытия ордера: {closing_price} USDT")
+                        order = None
+                        print(f"Позиция успешно закрыта.")
+                    print(str(last_usdt))
                     print(str(res_v) + " " + str(pd_res))
-                    print("Balance:")
-                    print(colored(str(balance) + " $.", "green" if balance >= 0 else "red"))
+                    balance = float(client.get_asset_balance(asset='USDT')['free']) - start_balance
+                    if last_balance is None:
+                        print("Текущий баланс:")
+                        print(colored(str(balance) + " $.", "green" if balance >= 0 else "red"))
+                        last_balance = balance
+                    else:
+                        print("Последний баланс:")
+                        print(colored(str(last_balance) + " $.", "green" if balance >= 0 else "red"))
                     print(colored("-" * 20, "yellow"))
-                    ticker = client.get_symbol_ticker(symbol='BTCUSDT')
-                    btc_price = float(ticker['price'])
-                    quantity = round(600.0 / btc_price, 3)
-                    if pd_res > res_v:
-                        # лонг
-                        order = client.create_order(
-                            symbol='BTCUSDT',
-                            side=Client.SIDE_BUY,
-                            quantity=quantity,
-                            type=Client.ORDER_TYPE_LIMIT,
-                            timeInForce=Client.TIME_IN_FORCE_GTC,
-                            price=last_close,
-                        )
-                        print(colored("LONG ->>>>>>>", "green"))
-                    elif pd_res < res_v:
-                        # шорт
-                        order = client.create_order(
-                            symbol='BTCUSDT',
-                            side=Client.SIDE_SELL,
-                            quantity=quantity,
-                            type=Client.ORDER_TYPE_LIMIT,
-                            timeInForce=Client.TIME_IN_FORCE_GTC,
-                            price=last_close,
-                        )
-                        print(colored("SHORT ->>>>>>>", "red"))
-                    order = loading_fill(order, client, "Ордер выполнен.")
-                    order_trades = client.get_my_trades(symbol='BTCUSDT', orderId=order['orderId'])
-                    opening_price = float(order_trades[0]['price'])
-                    print(f"Цена открытия ордера: {opening_price} USDT")
+                    if current_od != last_od:
+                        ticker = client.get_symbol_ticker(symbol=TICKER)
+                        btc_price = float(ticker['price'])
+                        quantity = round(300.0 / btc_price, 4)
+                        if current_od == 'Long':
+                            # лонг
+                            order = client.create_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_BUY,
+                                quantity=quantity,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
+                                price=last_usdt + cl_area,
+                            )
+                            print(colored("LONG ->>>>>>>", "green"))
+                        elif current_od == 'Short':
+                            # шорт
+                            order = client.create_order(
+                                symbol=TICKER,
+                                side=Client.SIDE_SELL,
+                                quantity=quantity,
+                                type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
+                                price=last_usdt - cl_area,
+                            )
+                            print(colored("SHORT ->>>>>>>", "red"))
+                        last_od = current_od
+                        order = loading_fill(order, client, "Ордер выполнен.")
+                        order_trades = client.get_my_trades(symbol=TICKER, orderId=order['orderId'])
+                        opening_price = float(order_trades[0]['price'])
+                        print(f"Цена открытия ордера: {opening_price} USDT")
+                    else:
+                        print("Идём в том же направлении")
                     # mess = "<b>%s $.</b>" % str(balance)
                     # bot.send_message(
                     #     588522164,
