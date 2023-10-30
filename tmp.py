@@ -7,9 +7,9 @@ api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
 client = Client(api_key, api_secret,)
 
-data = client.get_historical_klines("BTCFDUSD", Client.KLINE_INTERVAL_15MINUTE, "1 Jun, 2023", "7 Oct, 2023")
+data = client.get_historical_klines("BTC", Client.KLINE_INTERVAL_15MINUTE, "1 Jun, 2023", "9 Oct, 2023")
 
-file = open("data_fdusd_15min.txt", "w")
+file = open("data_15min.txt", "w")
 for i in range(0, len(data)):
     file.write(str(data[i][0]) + " " + str(data[i][1]) + " " + str(data[i][2]) + " " + str(data[i][3]) + " " + str(data[i][4]) + " " +
                str(data[i][5]) + " " + str(data[i][6]) + " " + str(data[i][7]) + " " + str(data[i][8]) + " " + str(data[i][9]) + " " +

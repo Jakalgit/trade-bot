@@ -9,9 +9,14 @@ from ta.momentum import RSIIndicator
 import pandas as pd
 
 TICKER = 'BTCUSDT'
-api_key = 'smXYfifKg6qxkDEDAFo4SHilcYfJlBU5Ubth2AoMy5M0qguQvUavzv7GvYxi8Wdw'
-api_secret = 'X6UwaZXjOizuQlNBEFNzu2PY5lJKXRwjym1ewmVL4BHEeMF4n7NxBhlJwRToB15v'
+api_key = 'tqbGB3Te2GS7dc8IcJMXWoSPBQxjwW3PbzwRocGSN9Ugt0y8mQ9fxy9GzOEL26hw'
+api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
-client = Client(api_key, api_secret, testnet=True)
+client = Client(api_key, api_secret, testnet=False)
 
-print(client.get_asset_balance(asset='BTC')['free'])
+margin_account_info = client.get_margin_account()
+asset_name = 'TUSD'
+for asset in margin_account_info['userAssets']:
+    if asset['asset'] == asset_name:
+        tusd_balance = float(asset['free'])
+        print(tusd_balance)

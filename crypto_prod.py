@@ -17,7 +17,7 @@ api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
 streams = ["%s@kline_15m" % (TICKER.lower())]
 
-model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
+model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -64,8 +64,8 @@ def get_margin_balance(client):
 
 def loading_fill(order, client, message):
     timer = 0
-    delay = 0.1
-    time = 240 # секунды
+    delay = 0.9
+    time = 180 # секунды
     origQty = order['origQty']
     while True:
         order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
@@ -78,7 +78,7 @@ def loading_fill(order, client, message):
             order_info = client.get_order(symbol=TICKER, orderId=order['orderId'])
             if order_info['status'] != 'FILLED':
                 client.cancel_order(symbol=TICKER, orderId=order['orderId'])
-                remaining_quantity = float(order_info['origQty']) - float(order_info['executedQty'])
+                remaining_quantity = round(float(order_info['origQty']) - float(order_info['executedQty']), 5)
                 if remaining_quantity > 0:
                     print("Выполение по маркету.")
                     order = client.create_margin_order(
@@ -144,16 +144,18 @@ async def subscribe_to_stream():
                                 symbol=TICKER,
                                 side=Client.SIDE_BUY,
                                 type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
                                 price=last_close,
-                                quantity=order['executedQty']
+                                quantity=order['origQty']
                             )
                         elif order['side'] == 'BUY':
                             order = client.create_margin_order(
                                 symbol=TICKER,
                                 side=Client.SIDE_SELL,
                                 type=Client.ORDER_TYPE_LIMIT,
+                                timeInForce=Client.TIME_IN_FORCE_GTC,
                                 price=last_close,
-                                quantity=order['executedQty']
+                                quantity=order['origQty']
                             )
                         while True:
                             order_status = client.get_order(symbol=TICKER, orderId=order['orderId'])
@@ -192,7 +194,7 @@ async def subscribe_to_stream():
                     print(colored("-" * 20, "yellow"))
                     ticker = client.get_symbol_ticker(symbol=TICKER)
                     btc_price = float(ticker['price'])
-                    quantity = round(rate / btc_price, 6)
+                    quantity = round(rate / btc_price, 5)
                     if pd_res < res_v:
                         # лонг
                         order = client.create_margin_order(
@@ -200,16 +202,18 @@ async def subscribe_to_stream():
                             side=Client.SIDE_BUY,
                             quantity=quantity,
                             type=Client.ORDER_TYPE_LIMIT,
+                            timeInForce=Client.TIME_IN_FORCE_GTC,
                             price=last_close,
                         )
                         print(colored("LONG ->>>>>>>", "green"))
                     elif pd_res > res_v:
                         # шорт
-                        order = client.create_order(
+                        order = client.create_margin_order(
                             symbol=TICKER,
                             side=Client.SIDE_SELL,
                             quantity=quantity,
                             type=Client.ORDER_TYPE_LIMIT,
+                            timeInForce=Client.TIME_IN_FORCE_GTC,
                             price=last_close,
                         )
                         print(colored("SHORT ->>>>>>>", "red"))
@@ -218,11 +222,11 @@ async def subscribe_to_stream():
                     opening_price = float(order_trades[0]['price'])
                     print(f"Цена открытия ордера: {opening_price} TUSD")
                     mess = "<b>%s TUSD.</b>" % str(balance)
-                    bot.send_message(
-                        588522164,
-                        mess,
-                        parse_mode='html'
-                    )
+                    # bot.send_message(
+                    #     588522164,
+                    #     mess,
+                    #     parse_mode='html'
+                    # )
                 else:
                     print("Loading values: " + colored(str(len(closes)), "yellow"))
                 time = next_time

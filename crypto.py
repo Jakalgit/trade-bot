@@ -17,7 +17,7 @@ api_secret = 'sV03zCztEmookHEtCyLUSx8ImIbx2gbIrrbzOselyqdaPqzYvkrbNQEu8ZYyK0KN'
 
 streams = ["%s@kline_15m" % (TICKER_P.lower())]
 
-model = keras.models.load_model('C:/Users/Cydia/Desktop/model_TUSD_15min')
+model = keras.models.load_model('/Users/Misha/Desktop/model_TUSD_15min')
 bot = telebot.TeleBot(TOKEN_BOT)
 
 
@@ -86,7 +86,7 @@ async def subscribe_to_stream():
             if time != next_time:
                 if time != -1:
                     if len(closes) >= start_length:
-                        closes_n, res_v = normalize_values(get_last_values(closes, min_value), last_close)
+                        closes_n, n1 = normalize_values(get_last_values(closes, min_value), last_close)
                         volume_n, n1 = normalize_values(get_last_values(volumes, min_value), 1)
                         rsi7_n, n1 = normalize_values(
                             get_last_values(RSIIndicator(pd.Series(closes), 7).rsi().tolist(), min_value),
@@ -112,9 +112,10 @@ async def subscribe_to_stream():
                         v1 = float(candles[-3][4])
                         v2 = float(candles[-2][4])
                         k = abs(1 - v2 / v1)
+                        res_v = closes_n[-1]
                         if (pd_res < res_v and v2 >= v1) or (pd_res >= res_v and v2 <= v1):
                             balance += rate * k
-                        elif (pd_res <= res_v and v2 >= v1) or (pd_res > res_v and v2 <= v1):
+                        elif (pd_res <= res_v and v2 <= v1) or (pd_res > res_v and v2 >= v1):
                             balance -= rate * k
                         print(str(v2))
                         print(str(res_v) + " " + str(pd_res))
